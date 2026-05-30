@@ -17,21 +17,21 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y cmake ninja-build gperf zlib1g-dev wget unzip
 
-      - name: Download Android NDK r26c
+      - name: Download Android NDK r27c
         run: |
-          wget -q https://dl.google.com/android/repository/android-ndk-r26c-linux.zip -O ndk.zip
+          wget -q https://dl.google.com/android/repository/android-ndk-r27c-linux.zip -O ndk.zip
           unzip -q ndk.zip
-          ls android-ndk-r26c/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++
-          ./android-ndk-r26c/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --version
+          ./android-ndk-r27c/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --version
 
       - name: Fetch OpenSSL (prebuilt for Android)
         run: |
           git clone --depth=1 https://github.com/KDAB/android_openssl.git
-          ls android_openssl/ssl_3/
+          ls -la android_openssl/ssl_3/
 
       - name: Build tdlib-obf
         run: |
-          export ANDROID_NDK_HOME=$PWD/android-ndk-r26c
+          export ANDROID_NDK_HOME=$PWD/android-ndk-r27c
+          export OPENSSL_DIR=$PWD/android_openssl/ssl_3/arm64-v8a
           mkdir build && cd build
           
           cmake -G Ninja \
@@ -40,7 +40,10 @@ jobs:
             -DANDROID_ABI=arm64-v8a \
             -DANDROID_NATIVE_API_LEVEL=21 \
             -DTD_ENABLE_JNI=ON \
-            -DOPENSSL_ROOT_DIR=$PWD/../android_openssl/ssl_3/arm64-v8a \
+            -DOPENSSL_ROOT_DIR=$OPENSSL_DIR \
+            -DOPENSSL_INCLUDE_DIR=$OPENSSL_DIR/include \
+            -DOPENSSL_CRYPTO_LIBRARY=$OPENSSL_DIR/lib/libcrypto.so \
+            -DOPENSSL_SSL_LIBRARY=$OPENSSL_DIR/lib/libssl.so \
             ..
           
           cmake --build . --parallel $(nproc)
