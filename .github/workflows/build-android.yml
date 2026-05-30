@@ -15,18 +15,18 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake ninja-build gperf wget unzip tree
+          sudo apt-get install -y cmake ninja-build gperf wget unzip tree default-jdk-headless libssl-dev
 
       - name: Download Android NDK r27c
         run: |
           wget -q https://dl.google.com/android/repository/android-ndk-r27c-linux.zip -O ndk.zip
           unzip -q ndk.zip
 
-      - name: Fetch OpenSSL (prebuilt for Android)
+      - name: Fetch OpenSSL 3 (prebuilt for Android)
         run: |
           git clone --depth=1 https://github.com/KDAB/android_openssl.git
-          echo "=== Проверяем, что ssl_3 на месте ==="
-          ls -la android_openssl/ssl_3/arm64-v8a/
+          echo "=== OpenSSL 3 arm64 structure ==="
+          ls -laR android_openssl/ssl_3/arm64-v8a/
 
       - name: Build zlib 1.3.2 for Android
         run: |
@@ -48,17 +48,66 @@ jobs:
           
           echo "ZLIB_ROOT=$PWD/install" >> $GITHUB_ENV
 
-      - name: Build tdlib-obf
+      # =========================================================================
+      # ЭТАП 1: Хостовая сборка (только для генерации исходников)
+      # =========================================================================
+      - name: Host build (generate missing sources)
+        run: |
+          mkdir -p build-host && cd build-host
+          
+          # Собираем без Android toolchain, используя системный OpenSSL (libssl-dev)
+          cmake -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DTD_ENABLE_JNI=OFF \
+            -DTD_SKIP_BENCHMARK=ON \
+            -DTD_SKIP_TEST=ON \
+            ..
+          
+          # Собираем всё; даже если линковка чего-то упадёт, 
+          # custom commands для генерации файлов уже отработают
+          cmake --build . --parallel $(nproc) || true
+          
+          cd ..
+
+      # =========================================================================
+      # Копируем сгенерированные файлы обратно в source tree,
+      # потому что при кросс-сборке CMake ищет их там, а не в build/
+      # =========================================================================
+      - name: Copy generated sources back to source tree
+        run: |
+          mkdir -p tdutils/generate/auto
+          mkdir -p td/generate/auto
+          
+          if [ -d "build-host/tdutils/generate/auto" ]; then
+            cp -r build-host/tdutils/generate/auto/* tdutils/generate/auto/
+          fi
+          
+          if [ -d "build-host/td/generate/auto" ]; then
+            cp -r build-host/td/generate/auto/* td/generate/auto/
+          fi
+          
+          echo "=== Generated files check ==="
+          ls -la tdutils/generate/auto/ || echo "tdutils/generate/auto empty"
+          ls -la td/generate/auto/ || echo "td/generate/auto empty"
+          
+          # Жёсткая проверка критичных файлов
+          test -f tdutils/generate/auto/mime_type_to_extension.cpp || { echo "CRITICAL: mime_type_to_extension.cpp missing"; exit 1; }
+          test -f tdutils/generate/auto/extension_to_mime_type.cpp || { echo "CRITICAL: extension_to_mime_type.cpp missing"; exit 1; }
+
+      # =========================================================================
+      # ЭТАП 2: Кросс-сборка под Android
+      # =========================================================================
+      - name: Build tdlib-obf for Android
         run: |
           export ANDROID_NDK_HOME=$PWD/android-ndk-r27c
           
-          # === ИСПРАВЛЕНИЕ: явно используем OpenSSL 3.x ===
           OPENSSL_DIR=$PWD/android_openssl/ssl_3
           OPENSSL_ABI_DIR=$OPENSSL_DIR/arm64-v8a
           
           echo "Using OpenSSL 3 from: $OPENSSL_ABI_DIR"
+          echo "ZLIB_ROOT=$ZLIB_ROOT"
           
-          mkdir -p build && cd build
+          mkdir -p build-android && cd build-android
           
           cmake -G Ninja \
             -DCMAKE_BUILD_TYPE=RelWithDebInfo \
@@ -66,6 +115,7 @@ jobs:
             -DANDROID_ABI=arm64-v8a \
             -DANDROID_NATIVE_API_LEVEL=21 \
             -DTD_ENABLE_JNI=ON \
+            -DTDLIB_STEALTH_SHAPING=ON \
             -DOPENSSL_ROOT_DIR=$OPENSSL_DIR \
             -DOPENSSL_INCLUDE_DIR=$OPENSSL_DIR/include \
             -DOPENSSL_CRYPTO_LIBRARY=$OPENSSL_ABI_DIR/libcrypto.so \
@@ -77,8 +127,11 @@ jobs:
           
           cmake --build . --parallel $(nproc)
 
-      - name: Upload artifact
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: tdlib-obf-arm64
-          path: build/libtdjson.so
+          path: |
+            build-android/libtdjson.so
+            build-android/libtdjsonandroid.so
+            build-android/*.so
