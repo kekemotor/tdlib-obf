@@ -5,19 +5,24 @@ on:
 
 jobs:
   build-arm64:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout tdlib-obf
         uses: actions/checkout@v4
         with:
           submodules: recursive
 
-      - name: Setup Android NDK
-        uses: android-actions/setup-android@v3
-      - run: sdkmanager "ndk;25.2.9519653"
-
       - name: Install dependencies
-        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build gperf zlib1g-dev
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build gperf zlib1g-dev wget unzip
+
+      - name: Download Android NDK r26c
+        run: |
+          wget -q https://dl.google.com/android/repository/android-ndk-r26c-linux.zip -O ndk.zip
+          unzip -q ndk.zip
+          ls android-ndk-r26c/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++
+          ./android-ndk-r26c/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --version
 
       - name: Fetch OpenSSL (prebuilt for Android)
         run: |
@@ -26,7 +31,7 @@ jobs:
 
       - name: Build tdlib-obf
         run: |
-          export ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/25.2.9519653
+          export ANDROID_NDK_HOME=$PWD/android-ndk-r26c
           mkdir build && cd build
           
           cmake -G Ninja \
