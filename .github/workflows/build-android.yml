@@ -1,0 +1,47 @@
+name: Build tdlib-obf Android
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-arm64:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout tdlib-obf
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Android NDK
+        uses: android-actions/setup-android@v3
+      - run: sdkmanager "ndk;25.2.9519653"
+
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build gperf zlib1g-dev
+
+      - name: Fetch OpenSSL (prebuilt for Android)
+        run: |
+          git clone --depth=1 https://github.com/KDAB/android_openssl.git
+          ls android_openssl/ssl_3/
+
+      - name: Build tdlib-obf
+        run: |
+          export ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/25.2.9519653
+          mkdir build && cd build
+          
+          cmake -G Ninja \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake \
+            -DANDROID_ABI=arm64-v8a \
+            -DANDROID_NATIVE_API_LEVEL=21 \
+            -DTD_ENABLE_JNI=ON \
+            -DOPENSSL_ROOT_DIR=$PWD/../android_openssl/ssl_3/arm64-v8a \
+            ..
+          
+          cmake --build . --parallel $(nproc)
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tdlib-obf-arm64
+          path: build/libtdjson.so
