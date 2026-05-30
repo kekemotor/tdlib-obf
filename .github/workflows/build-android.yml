@@ -15,18 +15,38 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake ninja-build gperf zlib1g-dev wget unzip
+          sudo apt-get install -y cmake ninja-build gperf wget unzip
 
       - name: Download Android NDK r27c
         run: |
           wget -q https://dl.google.com/android/repository/android-ndk-r27c-linux.zip -O ndk.zip
           unzip -q ndk.zip
-          ./android-ndk-r27c/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --version
 
       - name: Fetch OpenSSL (prebuilt for Android)
         run: |
           git clone --depth=1 https://github.com/KDAB/android_openssl.git
-          ls -la android_openssl/ssl_3/
+
+      - name: Build zlib 1.3.2 for Android
+        run: |
+          export ANDROID_NDK_HOME=$PWD/android-ndk-r27c
+          export PATH=$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin:$PATH
+          
+          wget -q https://github.com/madler/zlib/releases/download/v1.3.2/zlib-1.3.2.tar.gz
+          tar -xzf zlib-1.3.2.tar.gz
+          cd zlib-1.3.2
+          
+          CC=aarch64-linux-android21-clang \
+          CXX=aarch64-linux-android21-clang++ \
+          AR=llvm-ar \
+          RANLIB=llvm-ranlib \
+          ./configure --prefix=$PWD/install --static
+          
+          make -j$(nproc)
+          make install
+          
+          echo "ZLIB_ROOT=$PWD/install" >> $GITHUB_ENV
+          ls -la $PWD/install/lib/
+          ls -la $PWD/install/include/
 
       - name: Build tdlib-obf
         run: |
@@ -44,6 +64,9 @@ jobs:
             -DOPENSSL_INCLUDE_DIR=$OPENSSL_DIR/include \
             -DOPENSSL_CRYPTO_LIBRARY=$OPENSSL_DIR/lib/libcrypto.so \
             -DOPENSSL_SSL_LIBRARY=$OPENSSL_DIR/lib/libssl.so \
+            -DZLIB_ROOT=$ZLIB_ROOT \
+            -DZLIB_LIBRARY=$ZLIB_ROOT/lib/libz.a \
+            -DZLIB_INCLUDE_DIR=$ZLIB_ROOT/include \
             ..
           
           cmake --build . --parallel $(nproc)
