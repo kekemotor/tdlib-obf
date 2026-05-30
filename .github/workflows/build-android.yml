@@ -25,10 +25,8 @@ jobs:
       - name: Fetch OpenSSL (prebuilt for Android)
         run: |
           git clone --depth=1 https://github.com/KDAB/android_openssl.git
-          echo "=== Структура android_openssl ==="
-          tree android_openssl/ || find android_openssl/ -type f | head -50
-          echo "=== Конкретно ssl_3 ==="
-          ls -laR android_openssl/ssl_3/ || echo "Директории ssl_3 нет!"
+          echo "=== Проверяем, что ssl_3 на месте ==="
+          ls -la android_openssl/ssl_3/arm64-v8a/
 
       - name: Build zlib 1.3.2 for Android
         run: |
@@ -52,17 +50,15 @@ jobs:
 
       - name: Build tdlib-obf
         run: |
-          # Найдём реальные пути к OpenSSL автоматически
-          OPENSSL_BASE=$(find $PWD/android_openssl -name "libcrypto.so" -o -name "libcrypto.a" | head -1 | xargs dirname || echo "")
-          echo "OpenSSL lib dir: $OPENSSL_BASE"
-          
-          if [ -z "$OPENSSL_BASE" ] || [ "$OPENSSL_BASE" = "." ]; then
-            echo "OpenSSL не найден! Проверьте структуру выше."
-            exit 1
-          fi
-          
           export ANDROID_NDK_HOME=$PWD/android-ndk-r27c
-          mkdir build && cd build
+          
+          # === ИСПРАВЛЕНИЕ: явно используем OpenSSL 3.x ===
+          OPENSSL_DIR=$PWD/android_openssl/ssl_3
+          OPENSSL_ABI_DIR=$OPENSSL_DIR/arm64-v8a
+          
+          echo "Using OpenSSL 3 from: $OPENSSL_ABI_DIR"
+          
+          mkdir -p build && cd build
           
           cmake -G Ninja \
             -DCMAKE_BUILD_TYPE=RelWithDebInfo \
@@ -70,10 +66,10 @@ jobs:
             -DANDROID_ABI=arm64-v8a \
             -DANDROID_NATIVE_API_LEVEL=21 \
             -DTD_ENABLE_JNI=ON \
-            -DOPENSSL_ROOT_DIR=$(dirname $OPENSSL_BASE) \
-            -DOPENSSL_INCLUDE_DIR=$(dirname $OPENSSL_BASE)/include \
-            -DOPENSSL_CRYPTO_LIBRARY=$OPENSSL_BASE/libcrypto.so \
-            -DOPENSSL_SSL_LIBRARY=$OPENSSL_BASE/libssl.so \
+            -DOPENSSL_ROOT_DIR=$OPENSSL_DIR \
+            -DOPENSSL_INCLUDE_DIR=$OPENSSL_DIR/include \
+            -DOPENSSL_CRYPTO_LIBRARY=$OPENSSL_ABI_DIR/libcrypto.so \
+            -DOPENSSL_SSL_LIBRARY=$OPENSSL_ABI_DIR/libssl.so \
             -DZLIB_ROOT=$ZLIB_ROOT \
             -DZLIB_LIBRARY=$ZLIB_ROOT/lib/libz.a \
             -DZLIB_INCLUDE_DIR=$ZLIB_ROOT/include \
